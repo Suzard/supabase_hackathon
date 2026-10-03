@@ -1,0 +1,95 @@
+import { poolStats } from "@/lib/supabase-store";
+
+// The front door. Written for an agent to read, not a human.
+export async function GET(request: Request) {
+  const origin = new URL(request.url).origin;
+
+  let poolLine = "Pool status is unavailable right now; requests may still succeed.";
+  try {
+    const { totals } = await poolStats();
+    poolLine =
+      `Pool right now: ${totals.liveKeys.anthropic} live Anthropic keys, ${totals.liveKeys.openai} live OpenAI keys. ` +
+      `$${totals.donatedUsd.toFixed(2)} of inference served from donated credits so far.`;
+  } catch {
+    // Render the protocol even when the database is unreachable.
+  }
+
+  const md = `# Token Charity
+
+Inference for agents that ran out of credits, served from API keys that hackathon
+participants donated. Native Anthropic and OpenAI APIs. Change two environment
+variables and keep working.
+
+${poolLine}
+
+## 1. Get a key
+
+\`\`\`bash
+curl -X POST ${origin}/register -H 'content-type: application/json' -d '{"label":"<your agent name>"}'
+\`\`\`
+
+The response contains \`api_key\`. It is shown once.
+
+## 2. Point your client at Token Charity
+
+Claude Code, or anything on the Anthropic SDK:
+
+\`\`\`bash
+export ANTHROPIC_BASE_URL=${origin}
+export ANTHROPIC_API_KEY=<api_key>
+\`\`\`
+
+Codex, or anything on the OpenAI SDK:
+
+\`\`\`bash
+export OPENAI_BASE_URL=${origin}/v1
+export OPENAI_API_KEY=<api_key>
+\`\`\`
+
+Keep your model names exactly as they are.
+
+## Endpoints
+
+| Endpoint | Protocol |
+| - | - |
+| \`POST /v1/messages\` | Anthropic Messages, streaming supported |
+| \`POST /v1/messages/count_tokens\` | Anthropic token counting |
+| \`POST /v1/responses\` | OpenAI Responses, streaming supported |
+| \`POST /v1/chat/completions\` | OpenAI Chat Completions, streaming supported |
+
+Requests and responses pass through unchanged, so each provider's own API docs apply
+as written. Authenticate with \`Authorization: Bearer <api_key>\` or
+\`x-api-key: <api_key>\`.
+
+## What to expect
+
+- Each request is served by one donated key, chosen by Jev, TypeSafe's decision model.
+  Response headers: \`x-token-charity-key\` (last 4 characters of the donor key),
+  \`x-token-charity-decider\`, \`x-token-charity-attempt\`.
+- If a donated key is out of credit or revoked, Token Charity retries on another key.
+  You get a 503 only when every key tried failed.
+- A 503 saying the pool has no live keys means nobody has donated for that provider.
+  Wait and retry, or donate.
+- All other errors come straight from the provider, unmodified.
+- Which models work depends on what the donated keys can reach.
+
+## Pricing
+
+Every request is metered at the provider's list price, and Token Charity takes no cut.
+Billing is not enabled yet.
+
+## Have unused credits? Donate them
+
+\`\`\`bash
+curl -X POST ${origin}/donate -H 'content-type: application/json' \\
+  -d '{"provider":"anthropic","api_key":"<your key>"}'
+\`\`\`
+
+\`provider\` is \`anthropic\` or \`openai\`. The key is checked with a free model-list call
+(no tokens spent), encrypted at rest, and never shown back.
+`;
+
+  return new Response(md, {
+    headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-store" },
+  });
+}
