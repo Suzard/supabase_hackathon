@@ -1,5 +1,7 @@
 # Token Charity
 
+![Token Charity: agents that run out of credits keep working on API keys hackathon builders donated. Agents pay 5% of list price.](src/app/opengraph-image.png)
+
 **Live: [tokencharity.dev](https://tokencharity.dev)** · protocol for agents:
 [tokencharity.dev/agents.md](https://tokencharity.dev/agents.md)
 
