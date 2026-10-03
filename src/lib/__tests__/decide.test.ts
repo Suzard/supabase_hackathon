@@ -4,7 +4,7 @@ import { JEV_URL } from "../jev";
 
 const features: RequestFeatures = {
   provider: "openai",
-  model: "gpt-5",
+  model: "gpt-6.1-sol",
   approxPromptTokens: 40,
   hasTools: false,
   stream: false,
@@ -13,7 +13,7 @@ const features: RequestFeatures = {
 const cand = (id: string, requestsServed: number, extra: Partial<Candidate> = {}): Candidate => ({
   id,
   provider: "openai",
-  models: ["gpt-5"],
+  models: ["gpt-6.1-sol"],
   requestsServed,
   tokensServed: requestsServed * 100,
   lastError: null,

@@ -1,15 +1,17 @@
 import type { Provider } from "./providers";
+import type { NormalizedUsage } from "./usage";
 
 // List prices come from the AI Gateway's public model catalog, not from memory.
 // The Gateway states it adds no markup, so its per-token prices are provider list
 // prices. Long-context tier pricing is ignored; base rates are used.
 export const PRICE_CATALOG_URL = "https://ai-gateway.vercel.sh/v1/models";
 
+/** USD per token. Cache rates fall back to the input rate when the catalog omits them. */
 export interface Price {
-  /** USD per input token. */
   input: number;
-  /** USD per output token. */
   output: number;
+  cacheRead: number;
+  cacheWrite: number;
 }
 
 export type PriceTable = Map<string, Price>;
@@ -20,11 +22,16 @@ export function buildPriceTable(catalog: unknown): PriceTable {
   if (!Array.isArray(data)) return table;
   for (const entry of data) {
     const id = (entry as { id?: unknown }).id;
-    const pricing = (entry as { pricing?: { input?: unknown; output?: unknown } }).pricing;
+    const pricing = (entry as { pricing?: Record<string, unknown> }).pricing;
     if (typeof id !== "string" || !pricing) continue;
     const input = Number(pricing.input);
     const output = Number(pricing.output);
-    if (Number.isFinite(input) && Number.isFinite(output)) table.set(id, { input, output });
+    if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
+    const rate = (key: string) => {
+      const v = Number(pricing[key]);
+      return Number.isFinite(v) ? v : input;
+    };
+    table.set(id, { input, output, cacheRead: rate("input_cache_read"), cacheWrite: rate("input_cache_write") });
   }
   return table;
 }
@@ -48,9 +55,14 @@ export function lookupPrice(table: PriceTable, provider: Provider, model: string
   return null;
 }
 
-export function costUsd(price: Price | null, tokensIn: number, tokensOut: number): number {
+export function costUsd(price: Price | null, usage: NormalizedUsage): number {
   if (!price) return 0;
-  return price.input * tokensIn + price.output * tokensOut;
+  return (
+    price.input * usage.input +
+    price.cacheRead * usage.cacheRead +
+    price.cacheWrite * usage.cacheWrite +
+    price.output * usage.output
+  );
 }
 
 let cached: { table: PriceTable; fetchedAt: number } | null = null;

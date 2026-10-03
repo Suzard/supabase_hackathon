@@ -31,27 +31,43 @@ The whole onboarding contract, from the agent's point of view:
 
     curl https://<host>/agents.md              # protocol + live pool state, no auth
     curl -X POST https://<host>/register       # -> tc_live_xxx
+
+    # Claude Code, or anything on the Anthropic SDK:
+    export ANTHROPIC_BASE_URL=https://<host>
+    export ANTHROPIC_API_KEY=tc_live_xxx
+
+    # Codex, or anything on the OpenAI SDK:
     export OPENAI_BASE_URL=https://<host>/v1
     export OPENAI_API_KEY=tc_live_xxx
 
-No SDK, no code change. Model names stay native: the agent keeps sending
-`gpt-...` or `claude-...` exactly as before. `/agents.md` is written for a model
-to read, not a human.
+No SDK, no code change, native model names. `/agents.md` is written for a model to
+read, not a human.
 
 ## Architecture (verified against primary docs, 2026-10-03)
 
-### Router: pass-through, not translation
+### Router: native protocols, pass-through
 
-`POST /v1/chat/completions`, OpenAI-compatible. The router swaps the auth header,
-forwards the body unchanged, and pipes the response back. Streaming works for free.
+Each provider is served on its own current native API. The router swaps the
+credential, forwards, and relays the response unbuffered. No translation between
+formats. (Revised 2026-10-03: an earlier draft proxied Anthropic through its
+OpenAI-compatibility layer, which Anthropic does not position as production grade
+and which Claude Code cannot use.)
 
-- OpenAI keys forward to `https://api.openai.com/v1/chat/completions`.
-- Anthropic keys forward to `https://api.anthropic.com/v1/chat/completions`.
-  Anthropic's OpenAI compatibility layer documents `stream` and `stream_options`
-  as fully supported and tools as supported. Documented caveats, surfaced in
-  `/agents.md`: `response_format` is ignored, tool `strict` is ignored, and
-  Anthropic does not position the layer as production grade.
-- Provider is inferred from the requested model string.
+| Endpoint | Upstream | Clients |
+| - | - | - |
+| `POST /v1/messages` | `https://api.anthropic.com/v1/messages` | Claude Code, Anthropic SDK |
+| `POST /v1/messages/count_tokens` | `https://api.anthropic.com/v1/messages/count_tokens` (free, not metered) | Claude Code |
+| `POST /v1/responses` | `https://api.openai.com/v1/responses` | Codex, OpenAI SDK |
+| `POST /v1/chat/completions` | `https://api.openai.com/v1/chat/completions` | older OpenAI-compatible clients |
+
+Anthropic Messages follows Claude Code's gateway contract
+(https://code.claude.com/docs/en/llm-gateway-protocol): accept the credential in
+`Authorization` or `x-api-key`; forward the body byte for byte and every
+`anthropic-*` header as an open list; stream unbuffered including pings; relay
+`retry-after`, `x-should-retry`, `anthropic-ratelimit-unified-*`; forward error
+bodies unmodified. Donor account identifiers (`anthropic-organization-id`,
+`openai-organization`, `openai-project`) are stripped from responses, and caller
+`openai-*` headers are never forwarded.
 
 ### Decision: Jev via AI Gateway (one call per request)
 
@@ -84,12 +100,18 @@ directly; the Gateway is used only for Jev.
 3. Router. As above.
 4. `decide()`. As above.
 5. Exhaustion. No provider error shapes hardcoded from memory. 401, 402, 429, or a
-   4xx body containing "quota", "credit", or "billing" marks the key suspect; the
-   router reroutes once to the next key by Jev's probability ranking. Every non-2xx
+   4xx body containing "quota", "credit", or "billing" marks the key; 429 and 5xx
+   reroute without marking. The router tries up to three keys in Jev's probability
+   order. A dead donor key is never surfaced as the caller's own 401. Every non-2xx
    body is logged verbatim so the matcher is tuned against real responses.
-6. Metering. Every call records tokens and the provider list-price cost. For
-   streams the router injects `stream_options.include_usage = true`, tees the
-   stream, and records usage from the final chunk.
+6. Metering. Every call records input, cache-read, cache-write, and output tokens
+   priced at the catalog's separate rates (Claude Code is cache-heavy, so this
+   matters). Anthropic reports cache tokens separately; OpenAI's input count
+   includes them. Streams are tapped, never modified: Anthropic usage comes from
+   `message_start` and the cumulative `message_delta`, Responses from
+   `response.completed`. Only Chat Completions streams get
+   `stream_options.include_usage = true` injected, since they report nothing
+   otherwise.
 7. Charging. One function that consumes the metered amount. Which Stripe product
    backs it is an open question for the user (MPP, prepaid Checkout credits, or a
    threshold invoice). Until answered, it is a no-op that records the amount.
@@ -127,7 +149,7 @@ directly; the Gateway is used only for Jev.
 Each step is demoable on its own.
 
 1. Scaffold: Next.js, pnpm, `.env.example`, Supabase migration SQL
-2. Pass-through `/v1/chat/completions` against one env-provided key
+2. Native pass-through router (`/v1/messages`, `/v1/responses`, `/v1/chat/completions`)
 3. Pool table and deterministic `decide()`
 4. Jev in `decide()`
 5. `POST /donate` with probe
@@ -143,7 +165,7 @@ Each step is demoable on its own.
 Anything not in this script is out of scope today.
 
 Claude Code is working, hits a credit wall, fetches `/agents.md`, registers,
-repoints `base_url`, resumes mid-task. A second terminal donates a fresh key. The
+sets `ANTHROPIC_BASE_URL`, resumes mid-task. A second terminal donates a fresh key. The
 dashboard shows Jev picking keys, a key draining to `exhausted`, traffic rerouting
 live, and the donated-dollars counter climbing.
 

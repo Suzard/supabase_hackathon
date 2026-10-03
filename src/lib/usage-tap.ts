@@ -1,35 +1,25 @@
-// Pass-through TransformStream for an OpenAI-format SSE stream that captures the
-// final `usage` object. The router sets `stream_options.include_usage = true` on
-// streamed requests so the provider sends one (both OpenAI and Anthropic's
-// compatibility layer support it).
+// Pass-through TransformStream over an SSE body that folds each `data:` payload into
+// usage via the protocol adapter, then reports the total when the stream ends. Bytes
+// (including keep-alive pings) are relayed unchanged and unbuffered.
 
-export interface TokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-}
-
-export function parseUsage(value: unknown): TokenUsage | null {
-  const u = value as { prompt_tokens?: unknown; completion_tokens?: unknown } | null | undefined;
-  if (!u || typeof u.prompt_tokens !== "number" || typeof u.completion_tokens !== "number") return null;
-  return { prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens };
-}
+import type { NormalizedUsage } from "./usage";
 
 export function createUsageTap(
-  onComplete: (usage: TokenUsage | null) => Promise<void> | void,
+  fold: (acc: NormalizedUsage | null, event: unknown) => NormalizedUsage | null,
+  onComplete: (usage: NormalizedUsage | null) => Promise<void> | void,
 ): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   let buffer = "";
-  let usage: TokenUsage | null = null;
+  let usage: NormalizedUsage | null = null;
 
   const consumeLine = (line: string) => {
     if (!line.startsWith("data:")) return;
     const payload = line.slice(5).trim();
     if (!payload || payload === "[DONE]") return;
     try {
-      const found = parseUsage(JSON.parse(payload).usage);
-      if (found) usage = found;
+      usage = fold(usage, JSON.parse(payload));
     } catch {
-      // Not JSON; pass it through untouched.
+      // Not JSON; relayed untouched.
     }
   };
 
