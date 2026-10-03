@@ -9,10 +9,10 @@ import type { Protocol } from "./protocols";
 import { supabaseStore } from "./supabase-store";
 
 function deps(): RouterDeps {
-  const key = env.poolEncryptionKey();
   return {
     store: supabaseStore,
-    decryptKey: (ciphertext) => decrypt(ciphertext, key),
+    // Read lazily so an unauthenticated request gets its 401 before any config is touched.
+    decryptKey: (ciphertext) => decrypt(ciphertext, env.poolEncryptionKey()),
     getPrices: () => getPriceTable(),
     defer: (task) => after(task),
     charge: chargeForUsage,

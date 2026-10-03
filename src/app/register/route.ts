@@ -15,7 +15,9 @@ export async function POST(request: Request) {
     {
       api_key: apiKey,
       note: "Shown once. Store it now.",
-      anthropic: { ANTHROPIC_BASE_URL: origin, ANTHROPIC_API_KEY: apiKey },
+      // ANTHROPIC_AUTH_TOKEN (Bearer) takes effect immediately in Claude Code; ANTHROPIC_API_KEY
+      // prompts once for interactive approval (https://code.claude.com/docs/en/llm-gateway-connect).
+      anthropic: { ANTHROPIC_BASE_URL: origin, ANTHROPIC_AUTH_TOKEN: apiKey },
       openai: { OPENAI_BASE_URL: `${origin}/v1`, OPENAI_API_KEY: apiKey },
       docs: `${origin}/agents.md`,
     },

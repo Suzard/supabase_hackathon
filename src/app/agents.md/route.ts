@@ -36,8 +36,11 @@ Claude Code, or anything on the Anthropic SDK:
 
 \`\`\`bash
 export ANTHROPIC_BASE_URL=${origin}
-export ANTHROPIC_API_KEY=<api_key>
+export ANTHROPIC_AUTH_TOKEN=<api_key>
 \`\`\`
+
+Use \`ANTHROPIC_AUTH_TOKEN\`, not \`ANTHROPIC_API_KEY\`: Claude Code applies it immediately,
+while \`ANTHROPIC_API_KEY\` waits for a one-time interactive approval.
 
 Codex, or anything on the OpenAI SDK:
 
@@ -56,6 +59,7 @@ Keep your model names exactly as they are.
 | \`POST /v1/messages/count_tokens\` | Anthropic token counting |
 | \`POST /v1/responses\` | OpenAI Responses, streaming supported |
 | \`POST /v1/chat/completions\` | OpenAI Chat Completions, streaming supported |
+| \`GET /v1/models\` | Models the donated keys can reach right now |
 
 Requests and responses pass through unchanged, so each provider's own API docs apply
 as written. Authenticate with \`Authorization: Bearer <api_key>\` or
@@ -64,6 +68,8 @@ as written. Authenticate with \`Authorization: Bearer <api_key>\` or
 ## What to expect
 
 - Each request is served by one donated key, chosen by Jev, TypeSafe's decision model.
+  Jev sees the request's shape (model, approximate size, whether tools are present) and
+  the first 500 characters of your latest turn, never the full conversation.
   Response headers: \`x-token-charity-key\` (last 4 characters of the donor key),
   \`x-token-charity-decider\`, \`x-token-charity-attempt\`.
 - If a donated key is out of credit or revoked, Token Charity retries on another key.

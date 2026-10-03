@@ -34,7 +34,8 @@ The whole onboarding contract, from the agent's point of view:
 
     # Claude Code, or anything on the Anthropic SDK:
     export ANTHROPIC_BASE_URL=https://<host>
-    export ANTHROPIC_API_KEY=tc_live_xxx
+    export ANTHROPIC_AUTH_TOKEN=tc_live_xxx   # not ANTHROPIC_API_KEY: that one waits
+                                              # for a one-time interactive approval
 
     # Codex, or anything on the OpenAI SDK:
     export OPENAI_BASE_URL=https://<host>/v1
@@ -59,6 +60,7 @@ and which Claude Code cannot use.)
 | `POST /v1/messages/count_tokens` | `https://api.anthropic.com/v1/messages/count_tokens` (free, not metered) | Claude Code |
 | `POST /v1/responses` | `https://api.openai.com/v1/responses` | Codex, OpenAI SDK |
 | `POST /v1/chat/completions` | `https://api.openai.com/v1/chat/completions` | older OpenAI-compatible clients |
+| `GET /v1/models` | union of models the live pool keys reach | Claude Code discovery, OpenAI SDK |
 
 Anthropic Messages follows Claude Code's gateway contract
 (https://code.claude.com/docs/en/llm-gateway-protocol): accept the credential in
