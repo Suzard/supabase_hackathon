@@ -1,7 +1,7 @@
 import { hashApiKey } from "./crypto";
 import { decide, type Candidate, type Decision, type RequestFeatures } from "./decide";
 import { classifyUpstream, type UpstreamVerdict } from "./exhaustion";
-import { costUsd, lookupPrice, type PriceTable } from "./pricing";
+import { costUsd, lookupPrice, RECIPIENT_RATE, type PriceTable } from "./pricing";
 import { relayHeaders, type Protocol } from "./protocols";
 import type { Store } from "./store";
 import { totalTokens, type NormalizedUsage } from "./usage";
@@ -16,8 +16,8 @@ export interface RouterDeps {
   getPrices(): Promise<PriceTable>;
   /** Schedules work after the response is sent (Next's `after`). */
   defer(task: () => Promise<void>): void;
-  /** Consumes the metered amount. Which Stripe product backs it is still open. */
-  charge(input: { recipientId: string; listPriceUsd: number }): Promise<void>;
+  /** Bills what the recipient owes for one request. */
+  charge(input: { recipientId: string; chargedUsd: number }): Promise<void>;
   jevApiKey?: string;
   fetchImpl?: typeof fetch;
 }
@@ -132,6 +132,7 @@ export async function routeRequest(request: Request, protocol: Protocol, deps: R
         if (!protocol.metered) return;
         const u = usage ?? { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
         const listPriceUsd = costUsd(price, u);
+        const chargedUsd = listPriceUsd * RECIPIENT_RATE;
         try {
           await deps.store.insertUsage({
             recipientId: recipient.id,
@@ -142,6 +143,7 @@ export async function routeRequest(request: Request, protocol: Protocol, deps: R
             stream: features.stream,
             usage: u,
             listPriceUsd,
+            chargedUsd,
             priceKnown: price !== null,
             statusCode: upstream.status,
             errorBody: null,
@@ -150,7 +152,7 @@ export async function routeRequest(request: Request, protocol: Protocol, deps: R
             latencyMs: Date.now() - started,
           });
           await deps.store.recordKeyUsage(keyId, totalTokens(u), listPriceUsd);
-          await deps.charge({ recipientId: recipient.id, listPriceUsd });
+          await deps.charge({ recipientId: recipient.id, chargedUsd });
         } catch (err) {
           console.error("metering failed", err);
         }
@@ -196,6 +198,7 @@ export async function routeRequest(request: Request, protocol: Protocol, deps: R
             stream: features.stream,
             usage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
             listPriceUsd: 0,
+            chargedUsd: 0,
             priceKnown: price !== null,
             statusCode: upstream.status,
             errorBody: text.slice(0, 4000),

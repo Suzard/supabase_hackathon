@@ -105,6 +105,7 @@ describe("routeRequest", () => {
 
     expect(usage[0]).toMatchObject({ poolKeyId: "k1", statusCode: 200, usage: { input: 10, output: 5 }, priceKnown: true });
     expect(usage[0].listPriceUsd).toBeCloseTo(0.000004 * 10 + 0.00002 * 5, 12);
+    expect(usage[0].chargedUsd).toBeCloseTo(usage[0].listPriceUsd * 0.05, 14);
   });
 
   it("reroutes past an out-of-credit key, marks it exhausted, and serves from the next", async () => {

@@ -75,6 +75,7 @@ export const supabaseStore: Store = {
         tokens_cache_write: row.usage.cacheWrite,
         tokens_output: row.usage.output,
         list_price_usd: row.listPriceUsd,
+        charged_usd: row.chargedUsd,
         price_known: row.priceKnown,
         status_code: row.statusCode,
         error_body: row.errorBody,
@@ -90,11 +91,11 @@ export const supabaseStore: Store = {
   },
 };
 
-export async function createRecipient(input: { email?: string; label?: string; apiKeyHash: string }) {
+export async function createRecipient(input: { email: string; label?: string; apiKeyHash: string }) {
   const rows = check(
     await db()
       .from("recipients")
-      .insert({ email: input.email ?? null, label: input.label ?? null, api_key_hash: input.apiKeyHash })
+      .insert({ email: input.email, label: input.label ?? null, api_key_hash: input.apiKeyHash })
       .select("id"),
   );
   return firstRow(rows, "recipients") as { id: string };
@@ -147,31 +148,43 @@ export interface PoolStats {
     model: string;
     statusCode: number;
     listPriceUsd: number;
+    chargedUsd: number;
     tokens: number;
     decider: string | null;
     confidence: number | null;
     keyId: string | null;
     attempt: number;
   }>;
-  totals: { donatedUsd: number; requests: number; tokens: number; liveKeys: Record<Provider, number> };
+  totals: {
+    donatedUsd: number;
+    chargedUsd: number;
+    requests: number;
+    tokens: number;
+    liveKeys: Record<Provider, number>;
+  };
+}
+
+async function totalCharged(): Promise<number> {
+  return Number(check(await db().rpc("charged_total")) ?? 0);
 }
 
 export async function poolStats(): Promise<PoolStats> {
-  const keyRows = check(
-    await db()
+  const [keyResult, usageResult, chargedUsd] = await Promise.all([
+    db()
       .from("pool_keys")
       .select("id, provider, key_hint, status, requests_served, tokens_served, cost_absorbed_usd, last_error, last_used_at")
       .order("created_at", { ascending: true }),
-  );
-  const usageRows = check(
-    await db()
+    db()
       .from("usage")
       .select(
-        "created_at, provider, model, status_code, list_price_usd, tokens_input, tokens_cache_read, tokens_cache_write, tokens_output, decision, pool_key_id, attempt",
+        "created_at, provider, model, status_code, list_price_usd, charged_usd, tokens_input, tokens_cache_read, tokens_cache_write, tokens_output, decision, pool_key_id, attempt",
       )
       .order("created_at", { ascending: false })
       .limit(25),
-  );
+    totalCharged(),
+  ]);
+  const keyRows = check(keyResult);
+  const usageRows = check(usageResult);
 
   const keys = (keyRows ?? []).map((k) => ({
     id: k.id,
@@ -195,6 +208,7 @@ export async function poolStats(): Promise<PoolStats> {
       model: u.model,
       statusCode: u.status_code,
       listPriceUsd: Number(u.list_price_usd),
+      chargedUsd: Number(u.charged_usd),
       tokens: u.tokens_input + u.tokens_cache_read + u.tokens_cache_write + u.tokens_output,
       decider: u.decision?.decider ?? null,
       confidence: u.decision?.confidence ?? null,
@@ -203,6 +217,7 @@ export async function poolStats(): Promise<PoolStats> {
     })),
     totals: {
       donatedUsd: keys.reduce((s, k) => s + k.costAbsorbedUsd, 0),
+      chargedUsd,
       requests: keys.reduce((s, k) => s + k.requestsServed, 0),
       tokens: keys.reduce((s, k) => s + k.tokensServed, 0),
       liveKeys,

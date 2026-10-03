@@ -12,7 +12,7 @@ const tc = (res) =>
 const reg = await fetch(`${base}/register`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ label: "smoke-test" }),
+  body: JSON.stringify({ email: "smoke@tokencharity.dev", label: "smoke-test" }),
 });
 if (reg.status !== 201) throw new Error(`register ${reg.status}: ${await reg.text()}`);
 const { api_key } = await reg.json();

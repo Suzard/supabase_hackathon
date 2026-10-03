@@ -1,10 +1,13 @@
 import { generateApiKey, hashApiKey } from "@/lib/crypto";
 import { createRecipient } from "@/lib/supabase-store";
 
-/** Issues a Token Charity key. Only its hash is stored; the key is shown once. */
+/** Issues a Token Charity key for a billing email. Only the key's hash is stored; the key is shown once. */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { email?: unknown; label?: unknown };
-  const email = typeof body.email === "string" ? body.email.slice(0, 320) : undefined;
+  const email = typeof body.email === "string" ? body.email.trim().slice(0, 320) : "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return Response.json({ error: "`email` is required: usage is billed to it" }, { status: 400 });
+  }
   const label = typeof body.label === "string" ? body.label.slice(0, 120) : undefined;
 
   const apiKey = generateApiKey();

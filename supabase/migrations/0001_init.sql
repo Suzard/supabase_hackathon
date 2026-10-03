@@ -21,7 +21,7 @@ create table pool_keys (
                      check (status in ('live', 'exhausted', 'invalid')),
   requests_served    integer not null default 0,
   tokens_served      bigint not null default 0,
-  cost_absorbed_usd  numeric(14, 6) not null default 0,
+  cost_absorbed_usd  numeric(18, 10) not null default 0,  -- list price of everything this key served
   last_error         text,
   last_used_at       timestamptz,
   created_at         timestamptz not null default now()
@@ -29,8 +29,9 @@ create table pool_keys (
 create index pool_keys_provider_status on pool_keys (provider, status);
 
 create table recipients (
-  id            uuid primary key default gen_random_uuid(),
-  email         text,
+  id                  uuid primary key default gen_random_uuid(),
+  email               text not null,   -- billing contact
+  stripe_customer_id  text,
   label         text,
   api_key_hash  text not null unique,
   created_at    timestamptz not null default now()
@@ -48,7 +49,8 @@ create table usage (
   tokens_cache_read   integer not null default 0,
   tokens_cache_write  integer not null default 0,
   tokens_output       integer not null default 0,
-  list_price_usd      numeric(14, 6) not null default 0,
+  list_price_usd      numeric(18, 10) not null default 0,  -- provider list price, absorbed by the donor's credits
+  charged_usd         numeric(18, 10) not null default 0,  -- what the recipient owes: 5% of list
   price_known         boolean not null default true,
   status_code         integer not null,
   error_body          text,          -- verbatim upstream body on non-2xx, to tune exhaustion matching
@@ -74,4 +76,9 @@ create or replace function record_key_usage(
          cost_absorbed_usd = cost_absorbed_usd + p_cost,
          last_used_at      = now()
    where id = p_key_id;
+$$;
+
+-- Dashboard total of what recipients owe, summed in the database.
+create or replace function charged_total() returns numeric language sql stable as $$
+  select coalesce(sum(charged_usd), 0) from usage;
 $$;

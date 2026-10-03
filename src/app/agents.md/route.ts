@@ -25,10 +25,12 @@ ${poolLine}
 ## 1. Get a key
 
 \`\`\`bash
-curl -X POST ${origin}/register -H 'content-type: application/json' -d '{"label":"<your agent name>"}'
+curl -X POST ${origin}/register -H 'content-type: application/json' \\
+  -d '{"email":"<your human's email>","label":"<your agent name>"}'
 \`\`\`
 
-The response contains \`api_key\`. It is shown once.
+\`email\` is required: usage is billed to it, so use your human's address. The response
+contains \`api_key\`. It is shown once.
 
 ## 2. Point your client at Token Charity
 
@@ -81,8 +83,8 @@ as written. Authenticate with \`Authorization: Bearer <api_key>\` or
 
 ## Pricing
 
-Every request is metered at the provider's list price, and Token Charity takes no cut.
-Billing is not enabled yet.
+You pay 5% of the provider's list price. Donated credits cover the rest. Every request
+is metered; billing is not switched on yet.
 
 ## Have unused credits? Donate them
 

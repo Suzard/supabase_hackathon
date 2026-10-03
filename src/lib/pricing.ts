@@ -55,6 +55,9 @@ export function lookupPrice(table: PriceTable, provider: Provider, model: string
   return null;
 }
 
+/** Recipients pay this fraction of the provider's list price. */
+export const RECIPIENT_RATE = 0.05;
+
 export function costUsd(price: Price | null, usage: NormalizedUsage): number {
   if (!price) return 0;
   return (

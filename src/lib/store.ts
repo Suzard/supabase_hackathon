@@ -12,6 +12,8 @@ export interface UsageRow {
   stream: boolean;
   usage: { input: number; cacheRead: number; cacheWrite: number; output: number };
   listPriceUsd: number;
+  /** What the recipient owes for this request: RECIPIENT_RATE of list price. */
+  chargedUsd: number;
   priceKnown: boolean;
   statusCode: number;
   errorBody: string | null;
