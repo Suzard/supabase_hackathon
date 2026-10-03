@@ -4,11 +4,12 @@ const base = process.argv[2] ?? process.env.TC_BASE_URL ?? "http://localhost:300
 const seeds = [
   ["openai", process.env.SEED_OPENAI_KEY],
   ["anthropic", process.env.SEED_ANTHROPIC_KEY],
+  ["anthropic", process.env.SEED_ANTHROPIC_KEY_2],
 ];
 
 for (const [provider, apiKey] of seeds) {
   if (!apiKey) {
-    console.log(`skip ${provider}: no SEED_${provider.toUpperCase()}_KEY`);
+    console.log(`skip ${provider}: seed key not set`);
     continue;
   }
   const res = await fetch(`${base}/donate`, {
