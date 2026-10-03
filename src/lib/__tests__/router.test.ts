@@ -85,10 +85,10 @@ describe("routeRequest", () => {
 
   it("forwards the exact body with the donated key, never the caller's", async () => {
     const { store, usage } = makeStore([{ id: "k1", provider: "anthropic", secret: "sk-ant-donor-AAAA" }]);
-    const fetchImpl = vi.fn(async (_u: string | URL | Request, _i?: RequestInit) =>
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
       Response.json({ id: "msg_1", usage: { input_tokens: 10, output_tokens: 5 } }, { headers: { "anthropic-organization-id": "donor" } }),
     );
-    const d = deps(store, fetchImpl as unknown as typeof fetch);
+    const d = deps(store, fetchImpl);
     const res = await routeRequest(req(messagesBody, { "anthropic-beta": "interleaved-thinking-2025-05-14" }), anthropicMessages, d);
     await d.flush();
 

@@ -52,13 +52,8 @@ describe("decide", () => {
   });
 
   it("asks Jev with labeled options and ranks by its answer", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
-      jevResponse("k2", { k1: 0.1, k2: 0.6, k3: 0.3 }),
-    );
-    const d = await decide(features, [cand("a", 0), cand("b", 9), cand("c", 2)], {
-      jevApiKey: "gw-key",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
+    const fetchImpl = vi.fn<typeof fetch>(async () => jevResponse("k2", { k1: 0.1, k2: 0.6, k3: 0.3 }));
+    const d = await decide(features, [cand("a", 0), cand("b", 9), cand("c", 2)], { jevApiKey: "gw-key", fetchImpl });
     expect(d).toMatchObject({ decider: "jev", ranking: ["b", "c", "a"], confidence: 0.8, jevModel: "jev-1.13.0" });
     expect(d.probabilities).toEqual({ a: 0.1, b: 0.6, c: 0.3 });
 
