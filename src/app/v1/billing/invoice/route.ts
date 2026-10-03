@@ -11,7 +11,13 @@ export async function POST(request: Request) {
   const stripe = stripeClient();
   if (!stripe) return Response.json({ error: "Billing is not enabled" }, { status: 503 });
 
-  const issued = await invoiceIfDue(recipient.id, STRIPE_MIN_CHARGE_USD, { store: billingStore, stripe });
+  let issued;
+  try {
+    issued = await invoiceIfDue(recipient.id, STRIPE_MIN_CHARGE_USD, { store: billingStore, stripe });
+  } catch (err) {
+    // The balance was returned to the unbilled pool; the caller can retry.
+    return Response.json({ error: `Stripe could not issue the invoice: ${err instanceof Error ? err.message : err}` }, { status: 502 });
+  }
   if (!issued) {
     const { unbilledUsd } = await billingSummary(recipient.id);
     return Response.json(

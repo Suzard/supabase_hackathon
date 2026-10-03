@@ -71,7 +71,7 @@ describe("invoiceIfDue", () => {
       { idempotencyKey: "tc-customer-r1" },
     );
     expect(stripe.invoices.create).toHaveBeenCalledWith(
-      expect.objectContaining({ customer: "cus_1", collection_method: "send_invoice", auto_advance: false }),
+      expect.objectContaining({ customer: "cus_1", currency: "usd", collection_method: "send_invoice", auto_advance: false }),
       { idempotencyKey: "tc-invoice-inv_row_1" },
     );
     expect(stripe.invoiceItems.create).toHaveBeenCalledWith(

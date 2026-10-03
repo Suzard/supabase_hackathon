@@ -70,6 +70,9 @@ export async function invoiceIfDue(
     const draft = await stripe.invoices.create(
       {
         customer: customerId,
+        // Explicit: a new customer has no currency, so Stripe would fall back to the
+        // account's default (which need not be USD) and reject the USD line item.
+        currency: "usd",
         collection_method: "send_invoice",
         days_until_due: 7,
         auto_advance: false,
