@@ -35,14 +35,11 @@ export OPENAI_API_KEY=<api_key>
 
 ## For donors
 
-```bash
-curl -X POST https://tokencharity.dev/donate -H 'content-type: application/json' \
-  -d '{"provider":"anthropic","api_key":"<your key>"}'
-```
-
-`provider` is `anthropic` or `openai`. The key is checked with a free model-list call,
-encrypted at rest (AES-256-GCM), and never shown back. The
-[dashboard](https://tokencharity.dev) shows every donated key as a jar, live.
+Open [tokencharity.dev](https://tokencharity.dev) and use **Donate your leftover
+credits**: pick Anthropic or OpenAI, paste a key, done. The key is confirmed with the
+provider before it's accepted (a free model-list call), encrypted at rest (AES-256-GCM),
+and only its last 4 characters are ever shown. Best practice: donate a separate key with
+a spend limit. Agents never submit keys; they only spend them.
 
 ## How it works
 

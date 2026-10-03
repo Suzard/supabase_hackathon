@@ -79,7 +79,7 @@ as written. Authenticate with \`Authorization: Bearer <api_key>\` or
 - If a donated key is out of credit or revoked, Token Charity retries on another key.
   You get a 503 only when every key tried failed.
 - A 503 saying the pool has no live keys means nobody has donated for that provider.
-  Wait and retry, or donate.
+  Wait and retry.
 - All other errors come straight from the provider, unmodified.
 - Which models work depends on what the donated keys can reach.
 
@@ -99,15 +99,10 @@ curl ${origin}/v1/billing -H 'authorization: Bearer <api_key>'
 curl -X POST ${origin}/v1/billing/invoice -H 'authorization: Bearer <api_key>'
 \`\`\`
 
-## Have unused credits? Donate them
+## Donations
 
-\`\`\`bash
-curl -X POST ${origin}/donate -H 'content-type: application/json' \\
-  -d '{"provider":"anthropic","api_key":"<your key>"}'
-\`\`\`
-
-\`provider\` is \`anthropic\` or \`openai\`. The key is checked with a free model-list call
-(no tokens spent), encrypted at rest, and never shown back.
+Keys are donated by people, not agents. If your human has credits they won't use, point
+them to ${origin}: the dashboard has a donate form. Don't submit API keys yourself.
 `;
 
   return new Response(md, {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { PROVIDER_NAME, type Provider } from "@/lib/providers";
 import type { PoolStats } from "@/lib/supabase-store";
 
 type Key = PoolStats["keys"][number];
@@ -27,11 +28,11 @@ function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-const PROVIDER_NAME: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI" };
-
 function useStats() {
   const [stats, setStats] = useState<PoolStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumping this re-runs the effect: an immediate fetch, then polling resumes.
+  const [reloads, setReloads] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -54,13 +55,13 @@ function useStats() {
       alive = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [reloads]);
 
-  return { stats, error };
+  return { stats, error, reload: () => setReloads((n) => n + 1) };
 }
 
 export function Board() {
-  const { stats, error } = useStats();
+  const { stats, error, reload } = useStats();
   const keyById = new Map((stats?.keys ?? []).map((k) => [k.id, k]));
   const latest = stats?.recent.find((r) => r.statusCode < 300);
 
@@ -78,6 +79,7 @@ export function Board() {
 
       <div className="flex flex-col gap-8">
         <ToteBoard stats={stats} />
+        <DonatePanel onDonated={reload} />
         {error && !stats && (
           <p className="text-ink-soft">
             Can&apos;t reach the pool yet ({error}). Once the database is connected, this board fills in.
@@ -136,23 +138,12 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-const noSubscribe = () => () => {};
-
-/** This site's origin in the browser; empty during server rendering. */
-function useOrigin(): string {
-  return useSyncExternalStore(noSubscribe, () => window.location.origin, () => "");
-}
-
 function Jars({ keys, latestKeyId, latestAt }: { keys: Key[]; latestKeyId: string | null; latestAt: string | null }) {
-  const origin = useOrigin();
   if (keys.length === 0) {
     return (
       <section className="border-2 border-dashed border-ink/30 p-6">
         <h2 className="font-display text-2xl font-bold uppercase">The jars are empty</h2>
-        <p className="mt-2 max-w-prose text-ink-soft">Nobody has donated a key yet. Got unused credits?</p>
-        <pre className="mt-3 overflow-x-auto bg-paper-deep p-3 text-sm">
-          {`curl -X POST ${origin}/donate -H 'content-type: application/json' \\\n  -d '{"provider":"anthropic","api_key":"<key>"}'`}
-        </pre>
+        <p className="mt-2 max-w-prose text-ink-soft">Nobody has donated a key yet. Be the first, just above.</p>
       </section>
     );
   }
@@ -269,5 +260,137 @@ function LedgerRow({ r, k }: { r: Row; k: Key | undefined }) {
         <span>{failed ? "key failed, next jar" : `paid ${usd(r.chargedUsd)}`}</span>
       </div>
     </li>
+  );
+}
+
+const FIELD_LABEL = "flex flex-col gap-1 text-xs font-semibold tracking-[0.15em] text-ink-soft uppercase";
+const FIELD_INPUT =
+  "border-2 border-ink bg-paper/80 px-3 py-2 font-sans text-base tracking-normal text-ink normal-case outline-none focus:border-gold-deep focus:bg-paper";
+
+type DonateStatus =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "done"; hint: string; provider: Provider }
+  | { kind: "failed"; message: string };
+
+function DonatePanel({ onDonated }: { onDonated: () => void }) {
+  const [provider, setProvider] = useState<Provider>("anthropic");
+  const [apiKey, setApiKey] = useState("");
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<DonateStatus>({ kind: "idle" });
+
+  function onKeyChange(value: string) {
+    setApiKey(value);
+    // Anthropic keys start with sk-ant-; anything else pasted while Anthropic is picked is left alone.
+    if (value.trim().startsWith("sk-ant-")) setProvider("anthropic");
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!apiKey.trim()) return;
+    setStatus({ kind: "checking" });
+    try {
+      const res = await fetch("/donate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider, api_key: apiKey.trim(), email: email.trim() || undefined }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { key_hint?: string; error?: string };
+      if (!res.ok) {
+        setStatus({ kind: "failed", message: body.error ?? `Donation failed (${res.status})` });
+        return;
+      }
+      setApiKey("");
+      setStatus({ kind: "done", hint: body.key_hint ?? "", provider });
+      onDonated();
+    } catch {
+      setStatus({ kind: "failed", message: "Couldn't reach Token Charity. Try again." });
+    }
+  }
+
+  const checking = status.kind === "checking";
+
+  return (
+    <section aria-labelledby="donate-heading" className="border-y-2 border-ink py-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h2 id="donate-heading" className="font-display text-[clamp(1.6rem,3vw,2.1rem)] leading-none font-extrabold uppercase">
+          Donate your leftover credits
+        </h2>
+        <p className="text-sm text-ink-soft">Agents that ran dry keep working on it.</p>
+      </div>
+
+      <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-3">
+        <fieldset className="flex">
+          <legend className="sr-only">Provider</legend>
+          {(["anthropic", "openai"] as const).map((p) => (
+            <label
+              key={p}
+              className={`cursor-pointer border-2 border-ink px-3 py-2 text-sm font-semibold first:rounded-l-sm last:rounded-r-sm not-first:-ml-0.5 ${
+                provider === p ? "bg-ink text-paper" : "bg-paper/70 text-ink hover:bg-paper-deep"
+              }`}
+            >
+              <input
+                type="radio"
+                name="provider"
+                value={p}
+                checked={provider === p}
+                onChange={() => setProvider(p)}
+                className="sr-only"
+              />
+              {PROVIDER_NAME[p]}
+            </label>
+          ))}
+        </fieldset>
+
+        <label className={`${FIELD_LABEL} min-w-[min(100%,18rem)] flex-[2]`}>
+          API key
+          <input
+            type="password"
+            required
+            value={apiKey}
+            onChange={(e) => onKeyChange(e.target.value)}
+            placeholder={provider === "anthropic" ? "sk-ant-…" : "sk-…"}
+            autoComplete="off"
+            spellCheck={false}
+            className={FIELD_INPUT}
+          />
+        </label>
+
+        <label className={`${FIELD_LABEL} min-w-[min(100%,12rem)] flex-1`}>
+          Email (optional)
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            className={FIELD_INPUT}
+          />
+        </label>
+
+        <button
+          type="submit"
+          disabled={checking || !apiKey.trim()}
+          className="border-2 border-board bg-board px-5 py-2 font-display text-xl font-extrabold tracking-wider text-gold uppercase transition-colors hover:bg-board-tile disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {checking ? "Checking…" : "Donate key"}
+        </button>
+      </form>
+
+      <p role="status" aria-live="polite" className="mt-3 min-h-6 text-sm">
+        {status.kind === "checking" && <span className="text-ink-soft">Checking the key with {PROVIDER_NAME[provider]}…</span>}
+        {status.kind === "done" && (
+          <span className="font-semibold text-live">
+            Thanks. Your {PROVIDER_NAME[status.provider]} jar ····{status.hint} is live.
+          </span>
+        )}
+        {status.kind === "failed" && <span className="font-semibold text-telethon">{status.message}</span>}
+      </p>
+
+      <p className="mt-1 max-w-prose text-xs text-ink-soft">
+        We confirm the key with the provider before accepting it, store it encrypted, and only ever show its last 4
+        characters. Best practice: create a separate key just for this, with a spend limit.
+      </p>
+    </section>
   );
 }

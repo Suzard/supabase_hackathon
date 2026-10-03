@@ -6,7 +6,7 @@
    `POOL_ENCRYPTION_KEY`, and two Anthropic seed keys plus one OpenAI key.
 2. Schema applied (`supabase db push --db-url ...`).
 3. App running at https://tokencharity.dev (or local `pnpm dev`). Dashboard open on the projector.
-4. `pnpm seed` run against that URL. Three jars on the board.
+4. Seed keys donated (dashboard form, or `pnpm seed`). Three jars on the board.
 5. In a spare terminal, register a key for the demo agent and keep the two
    `ANTHROPIC_*` lines ready to paste.
 
@@ -31,13 +31,10 @@ ledger shows `single` instead of `Jev 0.83`.
    Real credit exhaustion can't be timed; revoking can. The next request hits that key,
    gets a real 401, the jar drains and is stamped REVOKED, the ledger shows the failed line
    followed by `REROUTED · TRY 2`, and Claude Code never notices.
-5. **A new donor.** In a second terminal:
-   ```bash
-   curl -X POST https://tokencharity.dev/donate -H 'content-type: application/json' \
-     -d '{"provider":"anthropic","api_key":"<fresh key>"}'
-   ```
-   A new jar appears and takes traffic.
-
+5. **A new donor.** Someone from the audience opens the dashboard, picks Anthropic,
+   pastes a fresh key into **Donate your leftover credits**, and hits Donate key. It's
+   checked with Anthropic, "Thanks. Your Anthropic jar ····xxxx is live." appears, and
+   the new jar lands on the board and starts taking traffic.
 6. **The bill.** The agent runs
    `curl https://tokencharity.dev/v1/billing -H 'authorization: Bearer <api_key>'` and
    hands its human the `pay_url`. Below $0.50 there is no invoice yet; that is Stripe's

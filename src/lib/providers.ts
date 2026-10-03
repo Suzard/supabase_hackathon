@@ -2,6 +2,8 @@ export type Provider = "openai" | "anthropic";
 
 export const PROVIDERS: readonly Provider[] = ["openai", "anthropic"];
 
+export const PROVIDER_NAME: Record<Provider, string> = { openai: "OpenAI", anthropic: "Anthropic" };
+
 export function isProvider(value: unknown): value is Provider {
   return typeof value === "string" && (PROVIDERS as readonly string[]).includes(value);
 }
