@@ -1,26 +1,69 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Telethon tote board: warm paper, oxblood board, gold money. Neutrals tinted warm. */
+@theme {
+  --color-paper: oklch(95.5% 0.022 82);
+  --color-paper-deep: oklch(91% 0.03 78);
+  --color-ink: oklch(24% 0.035 40);
+  --color-ink-soft: oklch(45% 0.035 45);
+  --color-board: oklch(29% 0.085 22);
+  --color-board-tile: oklch(22% 0.06 22);
+  --color-board-seam: oklch(16% 0.04 22);
+  --color-gold: oklch(82% 0.14 82);
+  --color-gold-deep: oklch(68% 0.14 70);
+  --color-telethon: oklch(57% 0.2 27);
+  --color-live: oklch(60% 0.13 150);
+  --color-spent: oklch(70% 0.02 60);
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-display: var(--font-big-shoulders), "Arial Narrow", sans-serif;
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* A faint ruled-paper grain so the page reads as a ledger, not a screen. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 31px,
+    oklch(88% 0.025 78 / 0.55) 31px 32px
+  );
+}
+
+/* Split-flap digit: a new value remounts the tile and flips down into place. */
+@keyframes flap {
+  from { transform: perspective(400px) rotateX(-90deg); opacity: 0.2; }
+  to { transform: perspective(400px) rotateX(0deg); opacity: 1; }
+}
+.flap { animation: flap 420ms var(--ease-out-quart) both; transform-origin: 50% 0%; }
+
+@keyframes slide-in {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.slide-in { animation: slide-in 500ms var(--ease-out-expo) both; }
+
+@keyframes stamp {
+  0% { transform: rotate(-14deg) scale(2.4); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: rotate(-14deg) scale(1); opacity: 1; }
+}
+.stamp { animation: stamp 520ms var(--ease-out-expo) both; }
+
+@keyframes rise {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-44px); opacity: 0; }
+}
+.rise { animation: rise 1600ms var(--ease-out-quart) both; }
+
+@keyframes blink { 50% { opacity: 0.25; } }
+.blink { animation: blink 1.6s steps(1) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flap, .slide-in, .stamp, .rise, .blink { animation: none; }
+  * { transition-duration: 0ms !important; }
 }
