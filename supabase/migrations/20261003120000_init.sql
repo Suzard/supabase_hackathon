@@ -32,9 +32,9 @@ create table recipients (
   id                  uuid primary key default gen_random_uuid(),
   email               text not null,   -- billing contact
   stripe_customer_id  text,
-  label         text,
-  api_key_hash  text not null unique,
-  created_at    timestamptz not null default now()
+  label               text,
+  api_key_hash        text not null unique,
+  created_at          timestamptz not null default now()
 );
 
 create table usage (
@@ -69,8 +69,8 @@ alter table usage      enable row level security;
 -- Atomic counter bump after a served request.
 create or replace function record_key_usage(
   p_key_id uuid, p_tokens bigint, p_cost numeric
-) returns void language sql as $$
-  update pool_keys
+) returns void language sql set search_path = '' as $$
+  update public.pool_keys
      set requests_served   = requests_served + 1,
          tokens_served     = tokens_served + p_tokens,
          cost_absorbed_usd = cost_absorbed_usd + p_cost,
@@ -79,6 +79,12 @@ create or replace function record_key_usage(
 $$;
 
 -- Dashboard total of what recipients owe, summed in the database.
-create or replace function charged_total() returns numeric language sql stable as $$
-  select coalesce(sum(charged_usd), 0) from usage;
+create or replace function charged_total() returns numeric language sql stable set search_path = '' as $$
+  select coalesce(sum(charged_usd), 0) from public.usage;
 $$;
+
+-- Supabase exposes public functions over its REST API. Only the server (service role) may call these.
+revoke execute on function record_key_usage(uuid, bigint, numeric) from public, anon, authenticated;
+revoke execute on function charged_total() from public, anon, authenticated;
+grant execute on function record_key_usage(uuid, bigint, numeric) to service_role;
+grant execute on function charged_total() to service_role;
