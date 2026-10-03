@@ -15,6 +15,7 @@ create table pool_keys (
   provider           text not null check (provider in ('openai', 'anthropic')),
   key_ciphertext     text not null,
   key_hint           text not null,            -- last 4 chars, for the dashboard
+  models             text[] not null default '{}', -- from the intake probe; what this key can serve
   status             text not null default 'live'
                      check (status in ('live', 'exhausted', 'invalid')),
   requests_served    integer not null default 0,
