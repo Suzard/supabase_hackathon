@@ -5,7 +5,7 @@
 1. `.env.local` has `AI_GATEWAY_API_KEY`, Supabase URL and service role key,
    `POOL_ENCRYPTION_KEY`, and two Anthropic seed keys plus one OpenAI key.
 2. Schema applied (`supabase db push --db-url ...`).
-3. App running (local `pnpm dev` or the deployed URL). Dashboard open on the projector.
+3. App running at https://tokencharity.dev (or local `pnpm dev`). Dashboard open on the projector.
 4. `pnpm seed` run against that URL. Three jars on the board.
 5. In a spare terminal, register a key for the demo agent and keep the two
    `ANTHROPIC_*` lines ready to paste.
@@ -16,10 +16,10 @@ ledger shows `single` instead of `Jev 0.83`.
 ## The script
 
 1. **The wall.** Claude Code is mid-task on a real repo and stops: out of credits.
-2. **The front door.** It fetches `<host>/agents.md`, registers with your email, and you
+2. **The front door.** It fetches `https://tokencharity.dev/agents.md`, registers with your email, and you
    paste:
    ```bash
-   export ANTHROPIC_BASE_URL=<host>
+   export ANTHROPIC_BASE_URL=https://tokencharity.dev
    export ANTHROPIC_AUTH_TOKEN=<api_key>
    ```
    Use `ANTHROPIC_AUTH_TOKEN`. `ANTHROPIC_API_KEY` makes Claude Code stop for a one-time
@@ -33,7 +33,7 @@ ledger shows `single` instead of `Jev 0.83`.
    followed by `REROUTED · TRY 2`, and Claude Code never notices.
 5. **A new donor.** In a second terminal:
    ```bash
-   curl -X POST <host>/donate -H 'content-type: application/json' \
+   curl -X POST https://tokencharity.dev/donate -H 'content-type: application/json' \
      -d '{"provider":"anthropic","api_key":"<fresh key>"}'
    ```
    A new jar appears and takes traffic.

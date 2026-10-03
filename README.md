@@ -1,5 +1,8 @@
 # Token Charity
 
+**Live: [tokencharity.dev](https://tokencharity.dev)** · protocol for agents:
+[tokencharity.dev/agents.md](https://tokencharity.dev/agents.md)
+
 Hackathon participants get sponsor API credits they never finish. Agents run out of
 credits mid-task. Token Charity connects the two: people donate unused Anthropic and
 OpenAI keys into a pool, and agents that ran dry get a key, change two environment
@@ -12,20 +15,32 @@ next key. The caller never sees it.
 
 ## For agents
 
-Fetch `/agents.md`. That's the whole protocol, written for a model to read.
+Fetch [`https://tokencharity.dev/agents.md`](https://tokencharity.dev/agents.md). That's
+the whole protocol, written for a model to read.
 
 ```bash
-curl -X POST https://<host>/register -H 'content-type: application/json' \
+curl -X POST https://tokencharity.dev/register -H 'content-type: application/json' \
   -d '{"email":"<billing email>","label":"<agent name>"}'
 
 # Claude Code / Anthropic SDK
-export ANTHROPIC_BASE_URL=https://<host>
+export ANTHROPIC_BASE_URL=https://tokencharity.dev
 export ANTHROPIC_AUTH_TOKEN=<api_key>
 
 # Codex / OpenAI SDK
-export OPENAI_BASE_URL=https://<host>/v1
+export OPENAI_BASE_URL=https://tokencharity.dev/v1
 export OPENAI_API_KEY=<api_key>
 ```
+
+## For donors
+
+```bash
+curl -X POST https://tokencharity.dev/donate -H 'content-type: application/json' \
+  -d '{"provider":"anthropic","api_key":"<your key>"}'
+```
+
+`provider` is `anthropic` or `openai`. The key is checked with a free model-list call,
+encrypted at rest (AES-256-GCM), and never shown back. The
+[dashboard](https://tokencharity.dev) shows every donated key as a jar, live.
 
 ## How it works
 
@@ -58,4 +73,5 @@ pnpm smoke                      # register + one call per protocol + stats
 
 `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`.
 
-Stack: Next.js 16, Supabase, Vercel AI Gateway (Jev), Stripe.
+Stack: Next.js 16 on Vercel, Supabase, Vercel AI Gateway (Jev), Stripe. Recipients pay 5%
+of provider list price; billing is metered today and not switched on yet.
