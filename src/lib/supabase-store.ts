@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { BillingStore } from "./billing";
 import type { Candidate } from "./decide";
 import { env } from "./env";
 import type { Provider } from "./providers";
@@ -222,5 +223,95 @@ export async function poolStats(): Promise<PoolStats> {
       tokens: keys.reduce((s, k) => s + k.tokensServed, 0),
       liveKeys,
     },
+  };
+}
+
+export const billingStore: BillingStore = {
+  async claimUnbilled(recipientId, minUsd) {
+    const rows = check(await db().rpc("claim_unbilled", { p_recipient: recipientId, p_min_usd: minUsd })) as Array<{
+      invoice_id: string;
+      amount_usd: string | number;
+      amount_cents: number;
+      request_count: number;
+    }> | null;
+    const row = rows?.[0];
+    if (!row) return null;
+    return {
+      invoiceId: row.invoice_id,
+      amountUsd: Number(row.amount_usd),
+      amountCents: row.amount_cents,
+      requestCount: row.request_count,
+    };
+  },
+
+  async releaseInvoice(invoiceId, error) {
+    check(await db().rpc("release_invoice", { p_invoice: invoiceId, p_error: error.slice(0, 1000) }));
+  },
+
+  async recipientForBilling(recipientId) {
+    const rows = check(await db().from("recipients").select("email, stripe_customer_id").eq("id", recipientId).limit(1));
+    const row = rows?.[0];
+    return row ? { email: row.email, stripeCustomerId: row.stripe_customer_id } : null;
+  },
+
+  async setStripeCustomer(recipientId, stripeCustomerId) {
+    check(await db().from("recipients").update({ stripe_customer_id: stripeCustomerId }).eq("id", recipientId));
+  },
+
+  async markInvoiceIssued(invoiceId, issued) {
+    check(
+      await db()
+        .from("invoices")
+        .update({
+          status: "open",
+          stripe_invoice_id: issued.stripeInvoiceId,
+          hosted_invoice_url: issued.hostedInvoiceUrl,
+          error: issued.error ?? null,
+        })
+        .eq("id", invoiceId),
+    );
+  },
+};
+
+export type InvoiceStatus = "open" | "paid" | "void" | "uncollectible";
+
+/** Applies a Stripe webhook's invoice status to our invoice row. */
+export async function setInvoiceStatus(stripeInvoiceId: string, status: InvoiceStatus) {
+  const patch: Record<string, unknown> = { status };
+  if (status === "paid") patch.paid_at = new Date().toISOString();
+  check(await db().from("invoices").update(patch).eq("stripe_invoice_id", stripeInvoiceId));
+}
+
+export interface BillingSummary {
+  unbilledUsd: number;
+  invoices: Array<{
+    amountUsd: number;
+    requestCount: number;
+    status: string;
+    hostedInvoiceUrl: string | null;
+    createdAt: string;
+  }>;
+}
+
+export async function billingSummary(recipientId: string): Promise<BillingSummary> {
+  const [unbilled, invoiceRows] = await Promise.all([
+    db().from("usage").select("charged_usd").eq("recipient_id", recipientId).is("invoice_id", null),
+    db()
+      .from("invoices")
+      .select("amount_usd, request_count, status, hosted_invoice_url, created_at")
+      .eq("recipient_id", recipientId)
+      .neq("status", "failed")
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+  return {
+    unbilledUsd: (check(unbilled) ?? []).reduce((sum, r) => sum + Number(r.charged_usd), 0),
+    invoices: (check(invoiceRows) ?? []).map((i) => ({
+      amountUsd: Number(i.amount_usd),
+      requestCount: i.request_count,
+      status: i.status,
+      hostedInvoiceUrl: i.hosted_invoice_url,
+      createdAt: i.created_at,
+    })),
   };
 }

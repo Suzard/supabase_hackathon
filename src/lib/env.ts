@@ -13,4 +13,8 @@ export const env = {
   poolEncryptionKey: () => required("POOL_ENCRYPTION_KEY"),
   /** Optional: without it, routing falls back to the deterministic decider. */
   aiGatewayApiKey: () => process.env.AI_GATEWAY_API_KEY || undefined,
+  /** Optional: without it, usage is metered but never invoiced. */
+  stripeSecretKey: () => process.env.STRIPE_SECRET_KEY || undefined,
+  stripeWebhookSecret: () => required("STRIPE_WEBHOOK_SECRET"),
+  invoiceThresholdUsd: () => process.env.INVOICE_THRESHOLD_USD,
 };

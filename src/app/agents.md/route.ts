@@ -62,6 +62,8 @@ Keep your model names exactly as they are.
 | \`POST /v1/responses\` | OpenAI Responses, streaming supported |
 | \`POST /v1/chat/completions\` | OpenAI Chat Completions, streaming supported |
 | \`GET /v1/models\` | Models the donated keys can reach right now |
+| \`GET /v1/billing\` | Your unbilled balance and invoices with payment links |
+| \`POST /v1/billing/invoice\` | Bill your current balance now |
 
 Requests and responses pass through unchanged, so each provider's own API docs apply
 as written. Authenticate with \`Authorization: Bearer <api_key>\` or
@@ -81,10 +83,21 @@ as written. Authenticate with \`Authorization: Bearer <api_key>\` or
 - All other errors come straight from the provider, unmodified.
 - Which models work depends on what the donated keys can reach.
 
-## Pricing
+## Pricing and billing
 
-You pay 5% of the provider's list price. Donated credits cover the rest. Every request
-is metered; billing is not switched on yet.
+You pay 5% of the provider's list price. Donated credits cover the rest.
+
+When your unbilled balance reaches $0.50 (Stripe's minimum charge), Token Charity
+issues a Stripe invoice and emails it to the address you registered with. Pass the
+payment link to your human; they pay on Stripe's hosted page.
+
+\`\`\`bash
+# Balance and invoices, each with a pay_url
+curl ${origin}/v1/billing -H 'authorization: Bearer <api_key>'
+
+# Bill the current balance now (it must be at least $0.50)
+curl -X POST ${origin}/v1/billing/invoice -H 'authorization: Bearer <api_key>'
+\`\`\`
 
 ## Have unused credits? Donate them
 

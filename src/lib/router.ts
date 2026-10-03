@@ -1,4 +1,4 @@
-import { hashApiKey } from "./crypto";
+import { authenticate, callerKey } from "./auth";
 import { decide, type Candidate, type Decision, type RequestFeatures } from "./decide";
 import { classifyUpstream, type UpstreamVerdict } from "./exhaustion";
 import { costUsd, lookupPrice, RECIPIENT_RATE, type PriceTable } from "./pricing";
@@ -20,12 +20,6 @@ export interface RouterDeps {
   charge(input: { recipientId: string; chargedUsd: number }): Promise<void>;
   jevApiKey?: string;
   fetchImpl?: typeof fetch;
-}
-
-function bearerOrApiKey(headers: Headers): string | null {
-  const auth = headers.get("authorization");
-  if (auth?.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim() || null;
-  return headers.get("x-api-key")?.trim() || null;
 }
 
 function json(protocol: Protocol, status: number, type: string, message: string, extra?: HeadersInit): Response {
@@ -54,11 +48,10 @@ function eligible(candidates: Candidate[], model: string): Candidate[] {
 export async function routeRequest(request: Request, protocol: Protocol, deps: RouterDeps): Promise<Response> {
   const fetchImpl = deps.fetchImpl ?? fetch;
 
-  const callerKey = bearerOrApiKey(request.headers);
-  if (!callerKey) {
+  if (!callerKey(request.headers)) {
     return json(protocol, 401, "authentication_error", "Missing Token Charity key. Get one: POST /register");
   }
-  const recipient = await deps.store.findRecipient(hashApiKey(callerKey));
+  const recipient = await authenticate(request.headers, deps.store.findRecipient);
   if (!recipient) return json(protocol, 401, "authentication_error", "Unknown Token Charity key");
 
   const raw = await request.text();
