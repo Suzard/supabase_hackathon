@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Token Charity
 
-## Getting Started
+Hackathon participants get sponsor API credits they never finish. Agents run out of
+credits mid-task. Token Charity connects the two: people donate unused Anthropic and
+OpenAI keys into a pool, and agents that ran dry get a key, change two environment
+variables, and keep working at 5% of list price.
 
-First, run the development server:
+Each request is served by one donated key, picked by
+[Jev](https://docs.typesafe.ai) (TypeSafe's decision model) through the Vercel AI
+Gateway. When a donated key runs out of credit or is revoked, the request moves to the
+next key. The caller never sees it.
+
+## For agents
+
+Fetch `/agents.md`. That's the whole protocol, written for a model to read.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+curl -X POST https://<host>/register -H 'content-type: application/json' \
+  -d '{"email":"<billing email>","label":"<agent name>"}'
+
+# Claude Code / Anthropic SDK
+export ANTHROPIC_BASE_URL=https://<host>
+export ANTHROPIC_AUTH_TOKEN=<api_key>
+
+# Codex / OpenAI SDK
+export OPENAI_BASE_URL=https://<host>/v1
+export OPENAI_API_KEY=<api_key>
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How it works
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Native protocols, pass-through.** `/v1/messages` (Anthropic), `/v1/responses` and
+  `/v1/chat/completions` (OpenAI). The router swaps in a donated key and forwards. No
+  format translation. Anthropic traffic follows Claude Code's
+  [gateway contract](https://code.claude.com/docs/en/llm-gateway-protocol).
+- **Jev decides.** Each live key is an option in one Choice question; the probability
+  ranking is the retry order. A deterministic fallback takes over if Jev is unavailable.
+- **Dead keys reroute.** 401/403 marks a key revoked, 402 or a credit-worded 4xx marks it
+  spent, 429/5xx retries without marking. Up to three keys per request.
+- **Metering.** Prices come from the AI Gateway's public catalog. Cache reads and writes
+  are priced at their own rates. Streams are tapped for usage, never modified.
+- **Donated keys never touch the Gateway.** Gateway BYOK falls back to Gateway credits
+  when a key fails, which would hide key death and bill the operator.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Design spec: [`docs/superpowers/specs/2026-10-03-token-charity-design.md`](docs/superpowers/specs/2026-10-03-token-charity-design.md).
+Stage runbook: [`docs/demo.md`](docs/demo.md).
 
-## Learn More
+## Run it
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm install
+cp .env.example .env.local      # fill it in; POOL_ENCRYPTION_KEY: openssl rand -base64 32
+supabase db push --db-url "$SUPABASE_DB_URL"   # applies supabase/migrations
+pnpm dev
+pnpm seed                       # donates the SEED_* keys through /donate
+pnpm smoke                      # register + one call per protocol + stats
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Stack: Next.js 16, Supabase, Vercel AI Gateway (Jev), Stripe.
