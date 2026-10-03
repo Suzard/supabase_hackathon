@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Token Charity</title>
+  <rect width="64" height="64" rx="14" fill="#4d1517"/>
+  <rect x="20" y="9" width="24" height="7" rx="2" fill="#f8efe0"/>
+  <path d="M16 20h32v24a12 12 0 0 1-12 12h-8a12 12 0 0 1-12-12z" fill="none" stroke="#f8efe0" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M20 31h24v13a8 8 0 0 1-8 8h-8a8 8 0 0 1-8-8z" fill="#f1ba4b"/>
+  <rect x="23" y="34" width="3" height="11" rx="1.5" fill="#f8efe0" opacity="0.55"/>
+</svg>
