@@ -38,6 +38,11 @@ ledger shows `single` instead of `Jev 0.83`.
    ```
    A new jar appears and takes traffic.
 
+6. **The bill.** The agent runs
+   `curl https://tokencharity.dev/v1/billing -H 'authorization: Bearer <api_key>'` and
+   hands its human the `pay_url`. Below $0.50 there is no invoice yet; that is Stripe's
+   minimum charge.
+
 ## If something goes wrong
 
 - 503 "no live keys": every jar for that provider is spent or revoked. Donate one.

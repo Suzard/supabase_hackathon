@@ -114,9 +114,19 @@ directly; the Gateway is used only for Jev.
    `response.completed`. Only Chat Completions streams get
    `stream_options.include_usage = true` injected, since they report nothing
    otherwise.
-7. Charging. One function that consumes the metered amount. Which Stripe product
-   backs it is an open question for the user (MPP, prepaid Checkout credits, or a
-   threshold invoice). Until answered, it is a no-op that records the amount.
+7. Charging. Recipients pay 5% of list price. Decided 2026-10-03: plain Stripe
+   Invoices (Metronome is Stripe's recommended usage-billing platform, but it needs a
+   separate account and duplicates metering we already do). When a recipient's unbilled
+   charges reach $0.50 (Stripe's minimum charge), `claim_unbilled()` atomically moves
+   their unbilled usage rows onto a new invoice row; the app then creates a USD invoice
+   (explicit currency, since a new customer has none), adds one line item, finalizes,
+   and sends it. Every Stripe call carries an idempotency key derived from the invoice
+   row. A failure before finalization releases the usage; after finalization it never
+   does, so usage is never billed twice. `GET /v1/billing` and
+   `POST /v1/billing/invoice` give agents their pay link. `invoice.paid`, `invoice.voided`
+   and `invoice.marked_uncollectible` arrive on a signed webhook. Stripe account must be
+   registered outside India, or Indian export rules require each customer's name and
+   billing address.
 
 ## Data model
 
@@ -171,8 +181,8 @@ sets `ANTHROPIC_BASE_URL`, resumes mid-task. A second terminal donates a fresh k
 dashboard shows Jev picking keys, a key draining to `exhausted`, traffic rerouting
 live, and the donated-dollars counter climbing.
 
-## Open questions (blocking only the step named)
+## Status (2026-10-03)
 
-- Which Stripe product backs charging (step 9).
-- Which Supabase org hosts the project (live DB; migration SQL is written regardless).
-- Seed OpenAI and Anthropic keys (end-to-end testing; code is written regardless).
+Verified live on tokencharity.dev: Anthropic Messages (plain and streamed), OpenAI
+Responses, Jev routing across two Anthropic keys, metering, and a Stripe test-mode
+invoice issued, paid, and reconciled through the webhook.
