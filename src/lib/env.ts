@@ -17,4 +17,7 @@ export const env = {
   stripeSecretKey: () => process.env.STRIPE_SECRET_KEY || undefined,
   stripeWebhookSecret: () => required("STRIPE_WEBHOOK_SECRET"),
   invoiceThresholdUsd: () => process.env.INVOICE_THRESHOLD_USD,
+  githubClientId: () => process.env.GITHUB_CLIENT_ID || undefined,
+  githubClientSecret: () => process.env.GITHUB_CLIENT_SECRET || undefined,
+  oauthSessionSecret: () => process.env.OAUTH_SESSION_SECRET || undefined,
 };

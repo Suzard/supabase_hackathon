@@ -19,11 +19,63 @@ function check<T>({ data, error }: { data: T; error: { message: string } | null 
   return data;
 }
 
+function missingRpc(error: unknown, fn: string): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return msg.includes("schema cache") && msg.includes(`function public.${fn}`);
+}
+
+function missingTable(error: unknown, table?: string): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  if (!msg.includes("schema cache") || !msg.includes("could not find the table")) return false;
+  return table ? msg.includes(`public.${table}`) : true;
+}
+
+function missingColumn(error: unknown, column?: string): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  if (!msg.includes("column") || !msg.includes("does not exist")) return false;
+  return column ? msg.includes(column.toLowerCase()) : true;
+}
+
 function firstRow<T>(rows: T[] | null, what: string): T {
   const row = rows?.[0];
   if (!row) throw new Error(`supabase: insert into ${what} returned no row`);
   return row;
 }
+
+type LiveCandidateRow = {
+  id: string;
+  provider: Provider;
+  models: string[] | null;
+  requests_served: number;
+  tokens_served: number | string;
+  last_error: string | null;
+  last_used_at: string | null;
+};
+
+type DonorCompat = {
+  email?: string | null;
+  display_name?: string | null;
+  oauth_provider?: string | null;
+  oauth_subject?: string | null;
+};
+
+type PoolKeyCompat = {
+  id: string;
+  provider: Provider;
+  key_hint: string;
+  status: string;
+  requests_served: number;
+  tokens_served: number | string;
+  cost_absorbed_usd: number | string;
+  last_error: string | null;
+  last_used_at: string | null;
+  expires_at?: string | null;
+  event_tag?: string | null;
+  donor?: DonorCompat | DonorCompat[] | null;
+};
 
 export const supabaseStore: Store = {
   async findRecipient(apiKeyHash) {
@@ -32,13 +84,27 @@ export const supabaseStore: Store = {
   },
 
   async liveCandidates(provider: Provider): Promise<Candidate[]> {
-    const rows = check(
-      await db()
-        .from("pool_keys")
-        .select("id, provider, models, requests_served, tokens_served, last_error, last_used_at")
-        .eq("provider", provider)
-        .eq("status", "live"),
-    );
+    const nowIso = new Date().toISOString();
+    let rows: LiveCandidateRow[] | null;
+    try {
+      rows = check(
+        await db()
+          .from("pool_keys")
+          .select("id, provider, models, requests_served, tokens_served, last_error, last_used_at")
+          .eq("provider", provider)
+          .eq("status", "live")
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`),
+      );
+    } catch (error) {
+      if (!missingColumn(error, "expires_at")) throw error;
+      rows = check(
+        await db()
+          .from("pool_keys")
+          .select("id, provider, models, requests_served, tokens_served, last_error, last_used_at")
+          .eq("provider", provider)
+          .eq("status", "live"),
+      );
+    }
     return (rows ?? []).map((r) => ({
       id: r.id,
       provider: r.provider,
@@ -102,8 +168,73 @@ export async function createRecipient(input: { email: string; label?: string; ap
   return firstRow(rows, "recipients") as { id: string };
 }
 
+export type DonorOwner = {
+  provider: "github";
+  subject: string;
+  email?: string | null;
+  name?: string | null;
+};
+
+async function findDonorId(owner: DonorOwner): Promise<string | null> {
+  const rows = check(
+    await db().from("donors").select("id").eq("oauth_provider", owner.provider).eq("oauth_subject", owner.subject).limit(1),
+  );
+  return rows?.[0]?.id ?? null;
+}
+
+async function ensureDonor(input: { email?: string; owner?: DonorOwner }): Promise<{ id: string }> {
+  if (input.owner) {
+    const existingId = await findDonorId(input.owner);
+    if (existingId) {
+      if (input.owner.email || input.owner.name) {
+        try {
+          check(
+            await db()
+              .from("donors")
+              .update({ email: input.owner.email ?? undefined, display_name: input.owner.name ?? undefined })
+              .eq("id", existingId),
+          );
+        } catch (error) {
+          if (!missingColumn(error, "display_name")) throw error;
+          check(await db().from("donors").update({ email: input.owner.email ?? undefined }).eq("id", existingId));
+        }
+      }
+      return { id: existingId };
+    }
+  }
+
+  let rows;
+  try {
+    rows = check(
+      await db()
+        .from("donors")
+        .insert({
+          email: input.owner?.email ?? input.email ?? null,
+          display_name: input.owner?.name ?? null,
+          oauth_provider: input.owner?.provider ?? null,
+          oauth_subject: input.owner?.subject ?? null,
+        })
+        .select("id"),
+    );
+  } catch (error) {
+    if (!missingColumn(error)) throw error;
+    rows = check(
+      await db()
+        .from("donors")
+        .insert({
+          email: input.owner?.email ?? input.email ?? null,
+        })
+        .select("id"),
+    );
+  }
+  return firstRow(rows, "donors") as { id: string };
+}
+
 export async function addPoolKey(input: {
   email?: string;
+  owner?: DonorOwner;
+  expiresAt?: string | null;
+  eventTag?: string | null;
   provider: Provider;
   ciphertext: string;
   fingerprint: string;
@@ -112,23 +243,53 @@ export async function addPoolKey(input: {
 }): Promise<{ id: string } | { duplicate: true }> {
   const existing = check(await db().from("pool_keys").select("id").eq("key_fingerprint", input.fingerprint).limit(1));
   if (existing?.length) return { duplicate: true };
-  const donor = firstRow(check(await db().from("donors").insert({ email: input.email ?? null }).select("id")), "donors") as {
-    id: string;
-  };
-  const rows = check(
-    await db()
-      .from("pool_keys")
-      .insert({
-        donor_id: donor.id,
-        provider: input.provider,
-        key_ciphertext: input.ciphertext,
-        key_fingerprint: input.fingerprint,
-        key_hint: input.hint,
-        models: input.models,
-      })
-      .select("id"),
-  );
+  const donor = await ensureDonor({ email: input.email, owner: input.owner });
+  let rows;
+  try {
+    rows = check(
+      await db()
+        .from("pool_keys")
+        .insert({
+          donor_id: donor.id,
+          provider: input.provider,
+          key_ciphertext: input.ciphertext,
+          key_fingerprint: input.fingerprint,
+          key_hint: input.hint,
+          models: input.models,
+          expires_at: input.expiresAt ?? null,
+          event_tag: input.eventTag ?? null,
+        })
+        .select("id"),
+    );
+  } catch (error) {
+    if (!missingColumn(error)) throw error;
+    rows = check(
+      await db()
+        .from("pool_keys")
+        .insert({
+          donor_id: donor.id,
+          provider: input.provider,
+          key_ciphertext: input.ciphertext,
+          key_fingerprint: input.fingerprint,
+          key_hint: input.hint,
+          models: input.models,
+        })
+        .select("id"),
+    );
+  }
   return firstRow(rows, "pool_keys") as { id: string };
+}
+
+export async function deletePoolKeyById(id: string, owner: DonorOwner): Promise<boolean> {
+  const donorId = await findDonorId(owner);
+  if (!donorId) return false;
+  const rows = check(await db().from("pool_keys").delete().eq("id", id).eq("donor_id", donorId).select("id").limit(1));
+  return Boolean(rows?.[0]);
+}
+
+export async function deletePoolKeyByIdAny(id: string): Promise<boolean> {
+  const rows = check(await db().from("pool_keys").delete().eq("id", id).select("id").limit(1));
+  return Boolean(rows?.[0]);
 }
 
 export interface PoolStats {
@@ -142,6 +303,12 @@ export interface PoolStats {
     costAbsorbedUsd: number;
     lastError: string | null;
     lastUsedAt: string | null;
+    expiresAt: string | null;
+    eventTag: string | null;
+    donorName: string | null;
+    donorEmail: string | null;
+    donorAuthProvider: string | null;
+    donorAuthSubject: string | null;
   }>;
   recent: Array<{
     createdAt: string;
@@ -166,64 +333,118 @@ export interface PoolStats {
 }
 
 async function totalCharged(): Promise<number> {
-  return Number(check(await db().rpc("charged_total")) ?? 0);
+  try {
+    return Number(check(await db().rpc("charged_total")) ?? 0);
+  } catch (error) {
+    if (!missingRpc(error, "charged_total")) throw error;
+    try {
+      const rows = check(await db().from("usage").select("charged_usd")) as Array<{ charged_usd: string | number }> | null;
+      return (rows ?? []).reduce((sum, row) => sum + Number(row.charged_usd ?? 0), 0);
+    } catch (usageError) {
+      if (missingTable(usageError, "usage")) return 0;
+      throw usageError;
+    }
+  }
 }
 
 export async function poolStats(): Promise<PoolStats> {
-  const [keyResult, usageResult, chargedUsd] = await Promise.all([
-    db()
-      .from("pool_keys")
-      .select("id, provider, key_hint, status, requests_served, tokens_served, cost_absorbed_usd, last_error, last_used_at")
-      .order("created_at", { ascending: true }),
-    db()
-      .from("usage")
-      .select(
-        "created_at, provider, model, status_code, list_price_usd, charged_usd, tokens_input, tokens_cache_read, tokens_cache_write, tokens_output, decision, pool_key_id, attempt",
-      )
-      .order("created_at", { ascending: false })
-      .limit(25),
-    totalCharged(),
-  ]);
-  const keyRows = check(keyResult);
-  const usageRows = check(usageResult);
+  try {
+    const [usageResult, chargedUsd] = await Promise.all([
+      db()
+        .from("usage")
+        .select(
+          "created_at, provider, model, status_code, list_price_usd, charged_usd, tokens_input, tokens_cache_read, tokens_cache_write, tokens_output, decision, pool_key_id, attempt",
+        )
+        .order("created_at", { ascending: false })
+        .limit(25),
+      totalCharged(),
+    ]);
 
-  const keys = (keyRows ?? []).map((k) => ({
-    id: k.id,
-    provider: k.provider,
-    hint: k.key_hint,
-    status: k.status,
-    requestsServed: k.requests_served,
-    tokensServed: Number(k.tokens_served),
-    costAbsorbedUsd: Number(k.cost_absorbed_usd),
-    lastError: k.last_error,
-    lastUsedAt: k.last_used_at,
-  }));
-  const liveKeys = { openai: 0, anthropic: 0 } as Record<Provider, number>;
-  for (const k of keys) if (k.status === "live") liveKeys[k.provider as Provider] += 1;
+    let keyRows;
+    try {
+      keyRows = check(
+        await db()
+          .from("pool_keys")
+          .select(
+            "id, provider, key_hint, status, requests_served, tokens_served, cost_absorbed_usd, last_error, last_used_at, expires_at, event_tag, donor:donors(email, display_name, oauth_provider, oauth_subject)",
+          )
+          .order("created_at", { ascending: true }),
+      );
+    } catch (error) {
+      if (!missingColumn(error)) throw error;
+      keyRows = check(
+        await db()
+          .from("pool_keys")
+          .select(
+            "id, provider, key_hint, status, requests_served, tokens_served, cost_absorbed_usd, last_error, last_used_at, donor:donors(email)",
+          )
+          .order("created_at", { ascending: true }),
+      );
+    }
 
-  return {
-    keys,
-    recent: (usageRows ?? []).map((u) => ({
-      createdAt: u.created_at,
-      provider: u.provider,
-      model: u.model,
-      statusCode: u.status_code,
-      listPriceUsd: Number(u.list_price_usd),
-      chargedUsd: Number(u.charged_usd),
-      tokens: u.tokens_input + u.tokens_cache_read + u.tokens_cache_write + u.tokens_output,
-      decider: u.decision?.decider ?? null,
-      confidence: u.decision?.confidence ?? null,
-      keyId: u.pool_key_id,
-      attempt: u.attempt,
-    })),
-    totals: {
-      donatedUsd: keys.reduce((s, k) => s + k.costAbsorbedUsd, 0),
-      chargedUsd,
-      requests: keys.reduce((s, k) => s + k.requestsServed, 0),
-      tokens: keys.reduce((s, k) => s + k.tokensServed, 0),
-      liveKeys,
-    },
-  };
+    const usageRows = check(usageResult);
+
+    const keys = (keyRows ?? []).map((k) => {
+      const row = k as unknown as PoolKeyCompat;
+      const donor = Array.isArray(row.donor) ? row.donor[0] : row.donor;
+      return {
+        id: row.id,
+        provider: row.provider,
+        hint: row.key_hint,
+        status: row.status,
+        requestsServed: row.requests_served,
+        tokensServed: Number(row.tokens_served),
+        costAbsorbedUsd: Number(row.cost_absorbed_usd),
+        lastError: row.last_error,
+        lastUsedAt: row.last_used_at,
+        expiresAt: row.expires_at ?? null,
+        eventTag: row.event_tag ?? null,
+        donorName: donor?.display_name ?? null,
+        donorEmail: donor?.email ?? null,
+        donorAuthProvider: donor?.oauth_provider ?? null,
+        donorAuthSubject: donor?.oauth_subject ?? null,
+      };
+    });
+    const liveKeys = { openai: 0, anthropic: 0 } as Record<Provider, number>;
+    for (const k of keys) if (k.status === "live") liveKeys[k.provider as Provider] += 1;
+
+    return {
+      keys,
+      recent: (usageRows ?? []).map((u) => ({
+        createdAt: u.created_at,
+        provider: u.provider,
+        model: u.model,
+        statusCode: u.status_code,
+        listPriceUsd: Number(u.list_price_usd),
+        chargedUsd: Number(u.charged_usd),
+        tokens: u.tokens_input + u.tokens_cache_read + u.tokens_cache_write + u.tokens_output,
+        decider: u.decision?.decider ?? null,
+        confidence: u.decision?.confidence ?? null,
+        keyId: u.pool_key_id,
+        attempt: u.attempt,
+      })),
+      totals: {
+        donatedUsd: keys.reduce((s, k) => s + k.costAbsorbedUsd, 0),
+        chargedUsd,
+        requests: keys.reduce((s, k) => s + k.requestsServed, 0),
+        tokens: keys.reduce((s, k) => s + k.tokensServed, 0),
+        liveKeys,
+      },
+    };
+  } catch (error) {
+    if (!missingTable(error)) throw error;
+    return {
+      keys: [],
+      recent: [],
+      totals: {
+        donatedUsd: 0,
+        chargedUsd: 0,
+        requests: 0,
+        tokens: 0,
+        liveKeys: { openai: 0, anthropic: 0 },
+      },
+    };
+  }
 }
 
 export const billingStore: BillingStore = {

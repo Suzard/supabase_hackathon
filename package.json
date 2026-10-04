@@ -10,7 +10,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "seed": "node --env-file=.env.local scripts/seed.mjs",
-    "smoke": "node --env-file=.env.local scripts/smoke.mjs"
+    "smoke": "node --env-file=.env.local scripts/smoke.mjs",
+    "donate-use": "node --env-file=.env.local scripts/donate-use.mjs",
+    "verify-key": "node --env-file=.env.local scripts/verify-dual-protocol.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.2",
